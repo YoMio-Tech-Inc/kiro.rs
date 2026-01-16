@@ -57,11 +57,25 @@ pub struct KiroCredentials {
     /// 未配置时回退到 config.json 的 machineId；都未配置时由 refreshToken 派生
     #[serde(skip_serializing_if = "Option::is_none")]
     pub machine_id: Option<String>,
+
+    /// 是否已禁用（持久化状态）
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
+    pub disabled: bool,
+
+    /// 禁用原因（持久化状态）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disabled_reason: Option<String>,
 }
 
 /// 判断是否为零（用于跳过序列化）
 fn is_zero(value: &u32) -> bool {
     *value == 0
+}
+
+/// 判断是否为 false（用于跳过序列化）
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// 凭据配置（支持单对象或数组格式）
@@ -211,6 +225,8 @@ mod tests {
             priority: 0,
             region: None,
             machine_id: None,
+            disabled: false,
+            disabled_reason: None,
         };
 
         let json = creds.to_pretty_json().unwrap();
@@ -219,6 +235,8 @@ mod tests {
         assert!(!json.contains("refreshToken"));
         // priority 为 0 时不序列化
         assert!(!json.contains("priority"));
+        // disabled 为 false 时不序列化
+        assert!(!json.contains("disabled"));
     }
 
     #[test]
@@ -321,6 +339,8 @@ mod tests {
             priority: 0,
             region: Some("eu-west-1".to_string()),
             machine_id: None,
+            disabled: false,
+            disabled_reason: None,
         };
 
         let json = creds.to_pretty_json().unwrap();
@@ -343,6 +363,8 @@ mod tests {
             priority: 0,
             region: None,
             machine_id: None,
+            disabled: false,
+            disabled_reason: None,
         };
 
         let json = creds.to_pretty_json().unwrap();
@@ -447,6 +469,8 @@ mod tests {
             priority: 3,
             region: Some("us-west-2".to_string()),
             machine_id: Some("c".repeat(64)),
+            disabled: false,
+            disabled_reason: None,
         };
 
         let json = original.to_pretty_json().unwrap();

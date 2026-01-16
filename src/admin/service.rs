@@ -8,8 +8,8 @@ use crate::kiro::token_manager::MultiTokenManager;
 use super::error::AdminServiceError;
 use super::types::{
     AddCredentialRequest, AddCredentialResponse, BalanceResponse, BatchAddCredentialsRequest,
-    BatchAddCredentialsResponse, BatchAddResultItem, CredentialStatusItem,
-    CredentialsStatusResponse,
+    BatchAddCredentialsResponse, BatchAddResultItem, BatchDeleteDisabledResponse,
+    CredentialStatusItem, CredentialsStatusResponse,
 };
 
 /// Admin 服务
@@ -122,6 +122,8 @@ impl AdminService {
             priority: req.priority,
             region: req.region,
             machine_id: req.machine_id,
+            disabled: false,
+            disabled_reason: None,
         };
 
         // 调用 token_manager 添加凭据
@@ -172,6 +174,8 @@ impl AdminService {
                 priority: 0, // 批量添加默认优先级为 0
                 region: req.region.clone(),
                 machine_id: None,
+                disabled: false,
+                disabled_reason: None,
             };
 
             // 尝试添加凭据
@@ -211,6 +215,19 @@ impl AdminService {
         self.token_manager
             .delete_credential(id)
             .map_err(|e| self.classify_delete_error(e, id))
+    }
+
+    /// 删除所有禁用的凭据
+    pub fn delete_all_disabled(&self) -> Result<BatchDeleteDisabledResponse, AdminServiceError> {
+        let deleted_ids = self
+            .token_manager
+            .delete_all_disabled()
+            .map_err(|e| AdminServiceError::InternalError(e.to_string()))?;
+
+        Ok(BatchDeleteDisabledResponse {
+            deleted_count: deleted_ids.len(),
+            deleted_ids,
+        })
     }
 
     /// 分类简单操作错误（set_disabled, set_priority, reset_and_enable）

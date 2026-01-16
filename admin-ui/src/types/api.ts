@@ -68,3 +68,9 @@ export interface AddCredentialResponse {
   message: string
   credentialId: number
 }
+
+// 批量删除禁用凭据响应
+export interface BatchDeleteDisabledResponse {
+  deletedCount: number
+  deletedIds: number[]
+}

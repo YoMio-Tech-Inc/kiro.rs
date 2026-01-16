@@ -404,6 +404,27 @@ enum DisabledReason {
     QuotaExceeded,
 }
 
+impl DisabledReason {
+    /// 转换为字符串（用于持久化）
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DisabledReason::Manual => "manual",
+            DisabledReason::TooManyFailures => "too_many_failures",
+            DisabledReason::QuotaExceeded => "quota_exceeded",
+        }
+    }
+
+    /// 从字符串解析（用于加载持久化状态）
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "manual" => Some(DisabledReason::Manual),
+            "too_many_failures" => Some(DisabledReason::TooManyFailures),
+            "quota_exceeded" => Some(DisabledReason::QuotaExceeded),
+            _ => None,
+        }
+    }
+}
+
 // ============================================================================
 // Admin API 公开结构
 // ============================================================================
@@ -521,12 +542,20 @@ impl MultiTokenManager {
                         has_new_machine_ids = true;
                     }
                 }
+
+                // 从持久化状态恢复禁用信息
+                let disabled = cred.disabled;
+                let disabled_reason = cred
+                    .disabled_reason
+                    .as_deref()
+                    .and_then(DisabledReason::from_str);
+
                 CredentialEntry {
                     id,
                     credentials: cred,
-                    failure_count: 0,
-                    disabled: false,
-                    disabled_reason: None,
+                    failure_count: if disabled { MAX_FAILURES_PER_CREDENTIAL } else { 0 },
+                    disabled,
+                    disabled_reason,
                     success_count: 0,
                     total_requests: 0,
                     last_used_at: None,
@@ -632,7 +661,7 @@ impl MultiTokenManager {
             }
 
             let (id, credentials) = {
-                let mut entries = self.entries.lock();
+                let entries = self.entries.lock();
 
                 // 使用随机选择算法选择凭据
                 let selected = self.select_random_credential_inner(&entries, &local_excluded);
@@ -640,33 +669,8 @@ impl MultiTokenManager {
                 if let Some((id, creds)) = selected {
                     (id, creds)
                 } else {
-                    // 没有可用凭据：如果是"自动禁用导致全灭"，做一次类似重启的自愈
-                    if entries.iter().any(|e| {
-                        e.disabled && e.disabled_reason == Some(DisabledReason::TooManyFailures)
-                    }) {
-                        tracing::warn!(
-                            "所有凭据均已被自动禁用，执行自愈：重置失败计数并重新启用（等价于重启）"
-                        );
-                        for e in entries.iter_mut() {
-                            if e.disabled_reason == Some(DisabledReason::TooManyFailures) {
-                                e.disabled = false;
-                                e.disabled_reason = None;
-                                e.failure_count = 0;
-                            }
-                        }
-                        // 自愈后重新选择
-                        if let Some((id, creds)) =
-                            self.select_random_credential_inner(&entries, &local_excluded)
-                        {
-                            (id, creds)
-                        } else {
-                            let available = entries.iter().filter(|e| !e.disabled).count();
-                            anyhow::bail!("所有凭据均已禁用（{}/{}）", available, total);
-                        }
-                    } else {
-                        let available = entries.iter().filter(|e| !e.disabled).count();
-                        anyhow::bail!("所有凭据均已禁用（{}/{}）", available, total);
-                    }
+                    let available = entries.iter().filter(|e| !e.disabled).count();
+                    anyhow::bail!("所有凭据均已禁用（{}/{}）", available, total);
                 }
             };
 
@@ -830,10 +834,18 @@ impl MultiTokenManager {
             None => return Ok(false),
         };
 
-        // 收集所有凭据
+        // 收集所有凭据，同步运行时禁用状态到 KiroCredentials
         let credentials: Vec<KiroCredentials> = {
             let entries = self.entries.lock();
-            entries.iter().map(|e| e.credentials.clone()).collect()
+            entries
+                .iter()
+                .map(|e| {
+                    let mut cred = e.credentials.clone();
+                    cred.disabled = e.disabled;
+                    cred.disabled_reason = e.disabled_reason.map(|r| r.as_str().to_string());
+                    cred
+                })
+                .collect()
         };
 
         // 序列化为 pretty JSON
@@ -876,33 +888,48 @@ impl MultiTokenManager {
     /// # Arguments
     /// * `id` - 凭据 ID（来自 CallContext）
     pub fn report_failure(&self, id: u64) -> bool {
-        let mut entries = self.entries.lock();
+        let (should_persist, has_available) = {
+            let mut entries = self.entries.lock();
 
-        let entry = match entries.iter_mut().find(|e| e.id == id) {
-            Some(e) => e,
-            None => return entries.iter().any(|e| !e.disabled),
+            let entry = match entries.iter_mut().find(|e| e.id == id) {
+                Some(e) => e,
+                None => return entries.iter().any(|e| !e.disabled),
+            };
+
+            entry.failure_count += 1;
+            entry.total_requests += 1;
+            entry.last_used_at = Some(Utc::now().to_rfc3339());
+            let failure_count = entry.failure_count;
+
+            tracing::warn!(
+                "凭据 #{} API 调用失败（{}/{}）",
+                id,
+                failure_count,
+                MAX_FAILURES_PER_CREDENTIAL
+            );
+
+            let should_persist = if failure_count >= MAX_FAILURES_PER_CREDENTIAL {
+                entry.disabled = true;
+                entry.disabled_reason = Some(DisabledReason::TooManyFailures);
+                tracing::error!("凭据 #{} 已连续失败 {} 次，已被禁用", id, failure_count);
+                true
+            } else {
+                false
+            };
+
+            // 检查是否还有可用凭据
+            let has_available = entries.iter().any(|e| !e.disabled);
+            (should_persist, has_available)
         };
 
-        entry.failure_count += 1;
-        entry.total_requests += 1;
-        entry.last_used_at = Some(Utc::now().to_rfc3339());
-        let failure_count = entry.failure_count;
-
-        tracing::warn!(
-            "凭据 #{} API 调用失败（{}/{}）",
-            id,
-            failure_count,
-            MAX_FAILURES_PER_CREDENTIAL
-        );
-
-        if failure_count >= MAX_FAILURES_PER_CREDENTIAL {
-            entry.disabled = true;
-            entry.disabled_reason = Some(DisabledReason::TooManyFailures);
-            tracing::error!("凭据 #{} 已连续失败 {} 次，已被禁用", id, failure_count);
+        // 禁用时持久化状态
+        if should_persist {
+            if let Err(e) = self.persist_credentials() {
+                tracing::warn!("禁用凭据后持久化失败: {}", e);
+            }
         }
 
-        // 检查是否还有可用凭据
-        entries.iter().any(|e| !e.disabled)
+        has_available
     }
 
     /// 报告指定凭据额度已用尽
@@ -911,33 +938,45 @@ impl MultiTokenManager {
     /// - 立即禁用该凭据（不等待连续失败阈值）
     /// - 返回是否还有可用凭据
     pub fn report_quota_exhausted(&self, id: u64) -> bool {
-        let mut entries = self.entries.lock();
+        let (should_persist, has_available) = {
+            let mut entries = self.entries.lock();
 
-        let entry = match entries.iter_mut().find(|e| e.id == id) {
-            Some(e) => e,
-            None => return entries.iter().any(|e| !e.disabled),
+            let entry = match entries.iter_mut().find(|e| e.id == id) {
+                Some(e) => e,
+                None => return entries.iter().any(|e| !e.disabled),
+            };
+
+            // 更新统计信息
+            entry.total_requests += 1;
+            entry.last_used_at = Some(Utc::now().to_rfc3339());
+
+            if entry.disabled {
+                return entries.iter().any(|e| !e.disabled);
+            }
+
+            entry.disabled = true;
+            entry.disabled_reason = Some(DisabledReason::QuotaExceeded);
+            // 设为阈值，便于在管理面板中直观看到该凭据已不可用
+            entry.failure_count = MAX_FAILURES_PER_CREDENTIAL;
+
+            tracing::error!(
+                "凭据 #{} 额度已用尽（MONTHLY_REQUEST_COUNT），已被禁用",
+                id
+            );
+
+            // 检查是否还有可用凭据
+            let has_available = entries.iter().any(|e| !e.disabled);
+            (true, has_available)
         };
 
-        // 更新统计信息
-        entry.total_requests += 1;
-        entry.last_used_at = Some(Utc::now().to_rfc3339());
-
-        if entry.disabled {
-            return entries.iter().any(|e| !e.disabled);
+        // 禁用时持久化状态
+        if should_persist {
+            if let Err(e) = self.persist_credentials() {
+                tracing::warn!("禁用凭据后持久化失败: {}", e);
+            }
         }
 
-        entry.disabled = true;
-        entry.disabled_reason = Some(DisabledReason::QuotaExceeded);
-        // 设为阈值，便于在管理面板中直观看到该凭据已不可用
-        entry.failure_count = MAX_FAILURES_PER_CREDENTIAL;
-
-        tracing::error!(
-            "凭据 #{} 额度已用尽（MONTHLY_REQUEST_COUNT），已被禁用",
-            id
-        );
-
-        // 检查是否还有可用凭据
-        entries.iter().any(|e| !e.disabled)
+        has_available
     }
 
     /// 获取使用额度信息
@@ -1196,6 +1235,27 @@ impl MultiTokenManager {
         tracing::info!("已删除凭据 #{}", id);
         Ok(())
     }
+
+    /// 删除所有禁用的凭据（Admin API）
+    ///
+    /// # 返回
+    /// - `Ok(Vec<u64>)` - 删除的凭据 ID 列表
+    /// - `Err(_)` - 持久化失败
+    pub fn delete_all_disabled(&self) -> anyhow::Result<Vec<u64>> {
+        let deleted_ids: Vec<u64> = {
+            let mut entries = self.entries.lock();
+            let ids: Vec<u64> = entries.iter().filter(|e| e.disabled).map(|e| e.id).collect();
+            entries.retain(|e| !e.disabled);
+            ids
+        };
+
+        if !deleted_ids.is_empty() {
+            self.persist_credentials()?;
+            tracing::info!("已批量删除 {} 个禁用凭据: {:?}", deleted_ids.len(), deleted_ids);
+        }
+
+        Ok(deleted_ids)
+    }
 }
 
 #[cfg(test)]
@@ -1410,7 +1470,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_multi_token_manager_acquire_context_auto_recovers_all_disabled() {
+    async fn test_multi_token_manager_acquire_context_no_auto_recovery() {
         let config = Config::default();
         let mut cred1 = KiroCredentials::default();
         cred1.access_token = Some("t1".to_string());
@@ -1432,10 +1492,16 @@ mod tests {
 
         assert_eq!(manager.available_count(), 0);
 
-        // 应触发自愈：重置失败计数并重新启用，避免必须重启进程
-        let ctx = manager.acquire_context().await.unwrap();
-        assert!(ctx.token == "t1" || ctx.token == "t2");
-        assert_eq!(manager.available_count(), 2);
+        // 不再自动恢复，应该返回错误
+        let result = manager.acquire_context().await;
+        assert!(result.is_err());
+        let err_msg = result.err().unwrap().to_string();
+        assert!(
+            err_msg.contains("所有凭据均已禁用"),
+            "错误应提示所有凭据禁用，实际: {}",
+            err_msg
+        );
+        assert_eq!(manager.available_count(), 0);
     }
 
     #[test]
@@ -1477,6 +1543,48 @@ mod tests {
             err
         );
         assert_eq!(manager.available_count(), 0);
+    }
+
+    #[test]
+    fn test_disabled_state_loaded_from_credentials() {
+        // 测试从 KiroCredentials 加载禁用状态
+        let config = Config::default();
+        let mut cred1 = KiroCredentials::default();
+        cred1.disabled = true;
+        cred1.disabled_reason = Some("too_many_failures".to_string());
+
+        let mut cred2 = KiroCredentials::default();
+        cred2.disabled = false;
+
+        let manager =
+            MultiTokenManager::new(config, vec![cred1, cred2], None, None, false).unwrap();
+
+        // cred1 应该被禁用，cred2 应该可用
+        assert_eq!(manager.total_count(), 2);
+        assert_eq!(manager.available_count(), 1);
+
+        // 验证只能选择 cred2
+        let (id, _) = manager.select_random_credential(&HashSet::new()).unwrap();
+        assert_eq!(id, 2, "应该只能选择未禁用的凭据");
+    }
+
+    #[test]
+    fn test_disabled_reason_string_conversion() {
+        // 测试 DisabledReason 字符串转换
+        assert_eq!(DisabledReason::Manual.as_str(), "manual");
+        assert_eq!(DisabledReason::TooManyFailures.as_str(), "too_many_failures");
+        assert_eq!(DisabledReason::QuotaExceeded.as_str(), "quota_exceeded");
+
+        assert_eq!(DisabledReason::from_str("manual"), Some(DisabledReason::Manual));
+        assert_eq!(
+            DisabledReason::from_str("too_many_failures"),
+            Some(DisabledReason::TooManyFailures)
+        );
+        assert_eq!(
+            DisabledReason::from_str("quota_exceeded"),
+            Some(DisabledReason::QuotaExceeded)
+        );
+        assert_eq!(DisabledReason::from_str("unknown"), None);
     }
 
     // ============ 凭据级 Region 优先级测试 ============

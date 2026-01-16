@@ -115,3 +115,14 @@ pub async fn delete_credential(
         Err(e) => (e.status_code(), Json(e.into_response())).into_response(),
     }
 }
+
+/// DELETE /api/admin/credentials/disabled
+/// 删除所有禁用的凭据
+pub async fn delete_all_disabled_credentials(
+    State(state): State<AdminState>,
+) -> impl IntoResponse {
+    match state.service.delete_all_disabled() {
+        Ok(response) => Json(response).into_response(),
+        Err(e) => (e.status_code(), Json(e.into_response())).into_response(),
+    }
+}

@@ -8,6 +8,7 @@ import type {
   SetPriorityRequest,
   AddCredentialRequest,
   AddCredentialResponse,
+  BatchDeleteDisabledResponse,
 } from '@/types/api'
 
 // 创建 axios 实例
@@ -82,5 +83,11 @@ export async function addCredential(
 // 删除凭据
 export async function deleteCredential(id: number): Promise<SuccessResponse> {
   const { data } = await api.delete<SuccessResponse>(`/credentials/${id}`)
+  return data
+}
+
+// 删除所有禁用的凭据
+export async function deleteAllDisabledCredentials(): Promise<BatchDeleteDisabledResponse> {
+  const { data } = await api.delete<BatchDeleteDisabledResponse>('/credentials/disabled')
   return data
 }

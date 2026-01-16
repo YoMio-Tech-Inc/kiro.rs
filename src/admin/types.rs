@@ -195,6 +195,16 @@ impl SuccessResponse {
     }
 }
 
+/// 批量删除禁用凭据响应
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchDeleteDisabledResponse {
+    /// 删除的凭据数量
+    pub deleted_count: usize,
+    /// 删除的凭据 ID 列表
+    pub deleted_ids: Vec<u64>,
+}
+
 /// 错误响应
 #[derive(Debug, Serialize)]
 pub struct AdminErrorResponse {

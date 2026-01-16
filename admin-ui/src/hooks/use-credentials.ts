@@ -7,6 +7,7 @@ import {
   getCredentialBalance,
   addCredential,
   deleteCredential,
+  deleteAllDisabledCredentials,
 } from '@/api/credentials'
 import type { AddCredentialRequest } from '@/types/api'
 
@@ -80,6 +81,17 @@ export function useDeleteCredential() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => deleteCredential(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['credentials'] })
+    },
+  })
+}
+
+// 删除所有禁用的凭据
+export function useDeleteAllDisabled() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => deleteAllDisabledCredentials(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['credentials'] })
     },

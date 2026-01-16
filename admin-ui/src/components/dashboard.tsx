@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { RefreshCw, LogOut, Moon, Sun, Server, Plus } from 'lucide-react'
+import { RefreshCw, LogOut, Moon, Sun, Server, Plus, Trash2 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { storage } from '@/lib/storage'
@@ -8,7 +8,17 @@ import { Button } from '@/components/ui/button'
 import { CredentialCard } from '@/components/credential-card'
 import { BalanceDialog } from '@/components/balance-dialog'
 import { AddCredentialDialog } from '@/components/add-credential-dialog'
-import { useCredentials } from '@/hooks/use-credentials'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { useCredentials, useDeleteAllDisabled } from '@/hooks/use-credentials'
 
 interface DashboardProps {
   onLogout: () => void
@@ -18,6 +28,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
   const [selectedCredentialId, setSelectedCredentialId] = useState<number | null>(null)
   const [balanceDialogOpen, setBalanceDialogOpen] = useState(false)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [batchDeleteDialogOpen, setBatchDeleteDialogOpen] = useState(false)
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return document.documentElement.classList.contains('dark')
@@ -27,6 +38,10 @@ export function Dashboard({ onLogout }: DashboardProps) {
 
   const queryClient = useQueryClient()
   const { data, isLoading, error, refetch } = useCredentials()
+  const deleteAllDisabled = useDeleteAllDisabled()
+
+  // 计算禁用凭据数量
+  const disabledCount = data?.credentials.filter((c) => c.disabled).length ?? 0
 
   const toggleDarkMode = () => {
     setDarkMode(!darkMode)
@@ -47,6 +62,18 @@ export function Dashboard({ onLogout }: DashboardProps) {
     storage.removeApiKey()
     queryClient.clear()
     onLogout()
+  }
+
+  const handleBatchDelete = () => {
+    deleteAllDisabled.mutate(undefined, {
+      onSuccess: (result) => {
+        setBatchDeleteDialogOpen(false)
+        toast.success(`已删除 ${result.deletedCount} 个禁用凭据`)
+      },
+      onError: (error) => {
+        toast.error(`删除失败: ${(error as Error).message}`)
+      },
+    })
   }
 
   if (isLoading) {
@@ -130,10 +157,22 @@ export function Dashboard({ onLogout }: DashboardProps) {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold">凭据管理</h2>
-            <Button onClick={() => setAddDialogOpen(true)} size="sm">
-              <Plus className="h-4 w-4 mr-2" />
-              添加凭据
-            </Button>
+            <div className="flex items-center gap-2">
+              {disabledCount > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setBatchDeleteDialogOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  删除禁用凭据 ({disabledCount})
+                </Button>
+              )}
+              <Button onClick={() => setAddDialogOpen(true)} size="sm">
+                <Plus className="h-4 w-4 mr-2" />
+                添加凭据
+              </Button>
+            </div>
           </div>
           {data?.credentials.length === 0 ? (
             <Card>
@@ -167,6 +206,28 @@ export function Dashboard({ onLogout }: DashboardProps) {
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}
       />
+
+      {/* 批量删除确认对话框 */}
+      <AlertDialog open={batchDeleteDialogOpen} onOpenChange={setBatchDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除所有 {disabledCount} 个禁用的凭据吗？此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBatchDelete}
+              disabled={deleteAllDisabled.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteAllDisabled.isPending ? '删除中...' : '确认删除'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
