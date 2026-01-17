@@ -14,10 +14,8 @@ use uuid::Uuid;
 
 use crate::http_client::{ProxyConfig, build_client};
 use crate::kiro::machine_id;
-use crate::kiro::token_manager::{CallContext, MultiTokenManager};
-
-#[cfg(test)]
 use crate::kiro::model::credentials::KiroCredentials;
+use crate::kiro::token_manager::{CallContext, MultiTokenManager};
 
 /// 每个凭据的最大重试次数
 const MAX_RETRIES_PER_CREDENTIAL: usize = 3;
@@ -75,6 +73,40 @@ impl KiroProvider {
     /// 获取 API 基础域名
     pub fn base_domain(&self) -> String {
         format!("q.{}.amazonaws.com", self.token_manager.config().region)
+    }
+
+    /// 根据当前凭据动态设置请求体中的 profile_arn
+    ///
+    /// 这是修复 social/idc/builder-id 凭据混用问题的关键：
+    /// - social 凭据有 profile_arn，需要在请求体中包含
+    /// - idc/builder-id 凭据没有 profile_arn，请求体中不应包含
+    ///
+    /// # Arguments
+    /// * `request_body` - 原始请求体 JSON 字符串
+    /// * `credentials` - 当前使用的凭据
+    ///
+    /// # Returns
+    /// 修改后的请求体 JSON 字符串
+    fn inject_profile_arn(request_body: &str, credentials: &KiroCredentials) -> String {
+        // 解析请求体
+        let mut json: serde_json::Value = match serde_json::from_str(request_body) {
+            Ok(v) => v,
+            Err(_) => return request_body.to_string(),
+        };
+
+        // 根据凭据设置或移除 profile_arn
+        if let Some(obj) = json.as_object_mut() {
+            match &credentials.profile_arn {
+                Some(arn) => {
+                    obj.insert("profileArn".to_string(), serde_json::Value::String(arn.clone()));
+                }
+                None => {
+                    obj.remove("profileArn");
+                }
+            }
+        }
+
+        serde_json::to_string(&json).unwrap_or_else(|_| request_body.to_string())
     }
 
     /// 构建请求头
@@ -398,12 +430,15 @@ impl KiroProvider {
                 }
             };
 
+            // 根据当前凭据动态设置 profile_arn
+            let body = Self::inject_profile_arn(request_body, &ctx.credentials);
+
             // 发送请求
             let response = match self
                 .client
                 .post(&url)
                 .headers(headers)
-                .body(request_body.to_string())
+                .body(body)
                 .send()
                 .await
             {

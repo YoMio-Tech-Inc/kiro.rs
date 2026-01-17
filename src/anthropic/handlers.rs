@@ -137,9 +137,10 @@ pub async fn post_messages(
     };
 
     // 构建 Kiro 请求
+    // 注意：profile_arn 设为 None，由 KiroProvider 根据当前凭据动态设置
     let kiro_request = KiroRequest {
         conversation_state: conversion_result.conversation_state,
-        profile_arn: state.profile_arn.clone(),
+        profile_arn: None,
     };
 
     let request_body = match serde_json::to_string(&kiro_request) {

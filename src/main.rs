@@ -100,11 +100,11 @@ async fn main() {
         proxy: proxy_config,
     });
 
-    // 构建 Anthropic API 路由（从第一个凭据获取 profile_arn）
+    // 构建 Anthropic API 路由
+    // 注意：profile_arn 现在由 KiroProvider 根据当前凭据动态设置
     let anthropic_app = anthropic::create_router_with_provider(
         &api_key,
         Some(kiro_provider),
-        first_credentials.profile_arn.clone(),
     );
 
     // 构建 Admin API 路由（如果配置了非空的 admin_api_key）
