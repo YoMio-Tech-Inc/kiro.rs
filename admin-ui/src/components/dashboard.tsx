@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { RefreshCw, LogOut, Moon, Sun, Server, Plus, Trash2 } from 'lucide-react'
+import { RefreshCw, LogOut, Moon, Sun, Server, Plus, Trash2, Upload } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { storage } from '@/lib/storage'
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { CredentialCard } from '@/components/credential-card'
 import { BalanceDialog } from '@/components/balance-dialog'
 import { AddCredentialDialog } from '@/components/add-credential-dialog'
+import { BatchAddCredentialDialog } from '@/components/batch-add-credential-dialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,6 +29,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
   const [selectedCredentialId, setSelectedCredentialId] = useState<number | null>(null)
   const [balanceDialogOpen, setBalanceDialogOpen] = useState(false)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [batchAddDialogOpen, setBatchAddDialogOpen] = useState(false)
   const [batchDeleteDialogOpen, setBatchDeleteDialogOpen] = useState(false)
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -168,6 +170,10 @@ export function Dashboard({ onLogout }: DashboardProps) {
                   删除禁用凭据 ({disabledCount})
                 </Button>
               )}
+              <Button onClick={() => setBatchAddDialogOpen(true)} size="sm" variant="outline">
+                <Upload className="h-4 w-4 mr-2" />
+                批量添加
+              </Button>
               <Button onClick={() => setAddDialogOpen(true)} size="sm">
                 <Plus className="h-4 w-4 mr-2" />
                 添加凭据
@@ -205,6 +211,12 @@ export function Dashboard({ onLogout }: DashboardProps) {
       <AddCredentialDialog
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}
+      />
+
+      {/* 批量添加凭据对话框 */}
+      <BatchAddCredentialDialog
+        open={batchAddDialogOpen}
+        onOpenChange={setBatchAddDialogOpen}
       />
 
       {/* 批量删除确认对话框 */}

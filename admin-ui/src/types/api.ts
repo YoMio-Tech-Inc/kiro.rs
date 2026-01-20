@@ -74,3 +74,37 @@ export interface BatchDeleteDisabledResponse {
   deletedCount: number
   deletedIds: number[]
 }
+
+// Provider 类型
+export type CredentialProvider = 'BuilderId' | 'Github' | 'Google'
+
+// 批量添加凭据项
+export interface BatchCredentialItem {
+  refreshToken: string
+  provider?: CredentialProvider
+  clientId?: string
+  clientSecret?: string
+}
+
+// 批量添加凭据请求（JSON 数组格式）
+export interface BatchAddCredentialsJsonRequest {
+  credentials: BatchCredentialItem[]
+  priority: number
+  region?: string
+}
+
+// 批量添加单个结果
+export interface BatchAddResultItem {
+  line: number
+  success: boolean
+  credentialId?: number
+  error?: string
+}
+
+// 批量添加凭据响应
+export interface BatchAddCredentialsResponse {
+  total: number
+  successCount: number
+  failedCount: number
+  results: BatchAddResultItem[]
+}

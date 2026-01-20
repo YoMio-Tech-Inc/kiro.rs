@@ -9,6 +9,8 @@ import type {
   AddCredentialRequest,
   AddCredentialResponse,
   BatchDeleteDisabledResponse,
+  BatchAddCredentialsJsonRequest,
+  BatchAddCredentialsResponse,
 } from '@/types/api'
 
 // 创建 axios 实例
@@ -89,5 +91,13 @@ export async function deleteCredential(id: number): Promise<SuccessResponse> {
 // 删除所有禁用的凭据
 export async function deleteAllDisabledCredentials(): Promise<BatchDeleteDisabledResponse> {
   const { data } = await api.delete<BatchDeleteDisabledResponse>('/credentials/disabled')
+  return data
+}
+
+// 批量添加凭据（JSON 数组格式）
+export async function batchAddCredentialsJson(
+  req: BatchAddCredentialsJsonRequest
+): Promise<BatchAddCredentialsResponse> {
+  const { data } = await api.post<BatchAddCredentialsResponse>('/credentials/batch-json', req)
   return data
 }

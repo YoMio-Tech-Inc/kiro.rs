@@ -127,6 +127,44 @@ pub struct BatchAddCredentialsRequest {
     pub region: Option<String>,
 }
 
+/// 批量添加凭据项（JSON 数组格式）
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchCredentialItem {
+    /// 刷新令牌（必填）
+    pub refresh_token: String,
+
+    /// Provider 类型（可选，默认 BuilderId）
+    /// 可选值: BuilderId, Github, Google
+    #[serde(default = "default_provider")]
+    pub provider: String,
+
+    /// OIDC Client ID（BuilderId 需要）
+    pub client_id: Option<String>,
+
+    /// OIDC Client Secret（BuilderId 需要）
+    pub client_secret: Option<String>,
+}
+
+fn default_provider() -> String {
+    "BuilderId".to_string()
+}
+
+/// 批量添加凭据请求（JSON 数组格式）
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchAddCredentialsJsonRequest {
+    /// 凭据列表
+    pub credentials: Vec<BatchCredentialItem>,
+
+    /// 统一优先级（应用于所有凭据）
+    #[serde(default)]
+    pub priority: u32,
+
+    /// 凭据级 Region 配置（应用于所有凭据，可选）
+    pub region: Option<String>,
+}
+
 /// 批量添加单个凭据的结果
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

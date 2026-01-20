@@ -8,8 +8,9 @@ import {
   addCredential,
   deleteCredential,
   deleteAllDisabledCredentials,
+  batchAddCredentialsJson,
 } from '@/api/credentials'
-import type { AddCredentialRequest } from '@/types/api'
+import type { AddCredentialRequest, BatchAddCredentialsJsonRequest } from '@/types/api'
 
 // 查询凭据列表
 export function useCredentials() {
@@ -92,6 +93,17 @@ export function useDeleteAllDisabled() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () => deleteAllDisabledCredentials(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['credentials'] })
+    },
+  })
+}
+
+// 批量添加凭据（JSON 数组格式）
+export function useBatchAddCredentials() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (req: BatchAddCredentialsJsonRequest) => batchAddCredentialsJson(req),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['credentials'] })
     },

@@ -7,9 +7,9 @@ use crate::kiro::token_manager::MultiTokenManager;
 
 use super::error::AdminServiceError;
 use super::types::{
-    AddCredentialRequest, AddCredentialResponse, BalanceResponse, BatchAddCredentialsRequest,
-    BatchAddCredentialsResponse, BatchAddResultItem, BatchDeleteDisabledResponse,
-    CredentialStatusItem, CredentialsStatusResponse,
+    AddCredentialRequest, AddCredentialResponse, BalanceResponse, BatchAddCredentialsJsonRequest,
+    BatchAddCredentialsRequest, BatchAddCredentialsResponse, BatchAddResultItem,
+    BatchDeleteDisabledResponse, CredentialStatusItem, CredentialsStatusResponse,
 };
 
 /// Admin 服务
@@ -17,6 +17,15 @@ use super::types::{
 /// 封装所有 Admin API 的业务逻辑
 pub struct AdminService {
     token_manager: Arc<MultiTokenManager>,
+}
+
+/// 将 Provider 映射为 authMethod
+fn map_provider_to_auth_method(provider: &str) -> String {
+    match provider.to_lowercase().as_str() {
+        "builderid" | "builder-id" => "builder-id".to_string(),
+        "github" | "google" => "social".to_string(),
+        _ => "social".to_string(), // 默认回退到 social
+    }
 }
 
 impl AdminService {
@@ -172,6 +181,85 @@ impl AdminService {
                 client_id: req.client_id.clone(),
                 client_secret: req.client_secret.clone(),
                 priority: 0, // 批量添加默认优先级为 0
+                region: req.region.clone(),
+                machine_id: None,
+                disabled: false,
+                disabled_reason: None,
+            };
+
+            // 尝试添加凭据
+            match self.token_manager.add_credential(new_cred).await {
+                Ok(credential_id) => {
+                    success_count += 1;
+                    results.push(BatchAddResultItem {
+                        line,
+                        success: true,
+                        credential_id: Some(credential_id),
+                        error: None,
+                    });
+                }
+                Err(e) => {
+                    results.push(BatchAddResultItem {
+                        line,
+                        success: false,
+                        credential_id: None,
+                        error: Some(e.to_string()),
+                    });
+                }
+            }
+        }
+
+        let failed_count = total - success_count;
+
+        BatchAddCredentialsResponse {
+            total,
+            success_count,
+            failed_count,
+            results,
+        }
+    }
+
+    /// 批量添加凭据（JSON 数组格式）
+    ///
+    /// 解析 JSON 数组中的凭据，逐个添加，返回每个的结果
+    pub async fn batch_add_credentials_json(
+        &self,
+        req: BatchAddCredentialsJsonRequest,
+    ) -> BatchAddCredentialsResponse {
+        let total = req.credentials.len();
+        let mut results = Vec::with_capacity(total);
+        let mut success_count = 0;
+
+        for (index, item) in req.credentials.into_iter().enumerate() {
+            let line = index + 1; // 行号从 1 开始
+
+            // 将 provider 映射为 auth_method
+            let auth_method = map_provider_to_auth_method(&item.provider);
+
+            // 验证 BuilderId 必须有 clientId 和 clientSecret
+            if auth_method == "builder-id" || auth_method == "idc" {
+                if item.client_id.is_none() || item.client_secret.is_none() {
+                    results.push(BatchAddResultItem {
+                        line,
+                        success: false,
+                        credential_id: None,
+                        error: Some("BuilderId 类型需要提供 clientId 和 clientSecret".to_string()),
+                    });
+                    continue;
+                }
+            }
+
+            // 构建凭据对象
+            let new_cred = KiroCredentials {
+                id: None,
+                access_token: None,
+                refresh_token: Some(item.refresh_token),
+                profile_arn: None,
+                expires_at: None,
+                auth_method: Some(auth_method),
+                client_id: item.client_id,
+                client_secret: item.client_secret,
+                priority: req.priority,
                 region: req.region.clone(),
                 machine_id: None,
                 disabled: false,

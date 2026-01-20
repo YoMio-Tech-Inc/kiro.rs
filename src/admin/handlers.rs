@@ -9,8 +9,8 @@ use axum::{
 use super::{
     middleware::AdminState,
     types::{
-        AddCredentialRequest, BatchAddCredentialsRequest, SetDisabledRequest, SetPriorityRequest,
-        SuccessResponse,
+        AddCredentialRequest, BatchAddCredentialsJsonRequest, BatchAddCredentialsRequest,
+        SetDisabledRequest, SetPriorityRequest, SuccessResponse,
     },
 };
 
@@ -101,6 +101,16 @@ pub async fn batch_add_credentials(
     Json(payload): Json<BatchAddCredentialsRequest>,
 ) -> impl IntoResponse {
     let response = state.service.batch_add_credentials(payload).await;
+    Json(response)
+}
+
+/// POST /api/admin/credentials/batch-json
+/// 批量添加凭据（JSON 数组格式）
+pub async fn batch_add_credentials_json(
+    State(state): State<AdminState>,
+    Json(payload): Json<BatchAddCredentialsJsonRequest>,
+) -> impl IntoResponse {
+    let response = state.service.batch_add_credentials_json(payload).await;
     Json(response)
 }
 
