@@ -60,6 +60,7 @@ export interface AddCredentialRequest {
   clientId?: string
   clientSecret?: string
   priority?: number
+  region?: string
 }
 
 // 添加凭据响应

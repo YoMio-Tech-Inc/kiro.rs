@@ -25,6 +25,7 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
   const [priority, setPriority] = useState('0')
+  const [region, setRegion] = useState('')
 
   const { mutate, isPending } = useAddCredential()
 
@@ -34,6 +35,7 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
     setClientId('')
     setClientSecret('')
     setPriority('0')
+    setRegion('')
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -59,6 +61,7 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
         clientId: clientId.trim() || undefined,
         clientSecret: clientSecret.trim() || undefined,
         priority: parseInt(priority) || 0,
+        region: region.trim() || undefined,
       },
       {
         onSuccess: (data) => {
@@ -93,6 +96,20 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
                 placeholder="请输入 Refresh Token"
                 value={refreshToken}
                 onChange={(e) => setRefreshToken(e.target.value)}
+                disabled={isPending}
+              />
+            </div>
+
+            {/* 刷新 Token 地域 */}
+            <div className="space-y-2">
+              <label htmlFor="region" className="text-sm font-medium">
+                刷新 Token 地域
+              </label>
+              <Input
+                id="region"
+                placeholder="例如 us-east-1（留空则使用全局 region）"
+                value={region}
+                onChange={(e) => setRegion(e.target.value)}
                 disabled={isPending}
               />
             </div>
