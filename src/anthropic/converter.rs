@@ -18,7 +18,9 @@ use super::types::{ContentBlock, MessagesRequest, Thinking};
 ///
 /// 按照用户要求：
 /// - 所有 sonnet → claude-sonnet-4.5
-/// - 所有 opus → claude-opus-4.5
+/// - opus 仅允许显式版本：
+///   - 4.5 → claude-opus-4.5
+///   - 4.6 → claude-opus-4.6
 /// - 所有 haiku → claude-haiku-4.5
 pub fn map_model(model: &str) -> Option<String> {
     let model_lower = model.to_lowercase();
@@ -26,7 +28,14 @@ pub fn map_model(model: &str) -> Option<String> {
     if model_lower.contains("sonnet") {
         Some("claude-sonnet-4.5".to_string())
     } else if model_lower.contains("opus") {
-        Some("claude-opus-4.5".to_string())
+        // Opus 必须显式指定版本。否则拒绝，避免“泛 opus”误映射到旧版本。
+        if model_lower.contains("4-6") || model_lower.contains("4.6") {
+            Some("claude-opus-4.6".to_string())
+        } else if model_lower.contains("4-5") || model_lower.contains("4.5") {
+            Some("claude-opus-4.5".to_string())
+        } else {
+            None
+        }
     } else if model_lower.contains("haiku") {
         Some("claude-haiku-4.5".to_string())
     } else {
@@ -640,11 +649,20 @@ mod tests {
 
     #[test]
     fn test_map_model_opus() {
-        assert!(
-            map_model("claude-opus-4-20250514")
-                .unwrap()
-                .contains("opus")
+        assert_eq!(
+            map_model("claude-opus-4-6"),
+            Some("claude-opus-4.6".to_string())
         );
+        assert_eq!(
+            map_model("claude-opus-4-6-20260205"),
+            Some("claude-opus-4.6".to_string())
+        );
+        assert_eq!(
+            map_model("claude-opus-4-5-20251101"),
+            Some("claude-opus-4.5".to_string())
+        );
+        // 未显式指定 4.5/4.6 的 Opus 一律拒绝（400）
+        assert!(map_model("claude-opus-4-20250514").is_none());
     }
 
     #[test]

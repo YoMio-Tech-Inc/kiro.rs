@@ -211,7 +211,9 @@ curl http://127.0.0.1:17152/v1/messages \
 | Anthropic 模型 | Kiro 模型 |
 |----------------|-----------|
 | `*sonnet*` | `claude-sonnet-4.5` |
-| `*opus*` | `claude-opus-4.5` |
+| `*opus-4-6*` / `*opus-4.6*` | `claude-opus-4.6` |
+| `*opus-4-5*` / `*opus-4.5*` | `claude-opus-4.5` |
+| `*opus*`（未显式指定 4.5/4.6） | **不支持（400）** |
 | `*haiku*` | `claude-haiku-4.5` |
 
 ## 项目结构

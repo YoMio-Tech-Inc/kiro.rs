@@ -44,6 +44,16 @@ pub async fn get_models() -> impl IntoResponse {
             model_type: "chat".to_string(),
             max_tokens: 32000,
         },
+        // 新版 Opus：放在旧版之前，便于客户端默认发现最新
+        Model {
+            id: "claude-opus-4-6".to_string(),
+            object: "model".to_string(),
+            created: 1770249600, // 2026-02-05 00:00:00 UTC
+            owned_by: "anthropic".to_string(),
+            display_name: "Claude Opus 4.6".to_string(),
+            model_type: "chat".to_string(),
+            max_tokens: 32000,
+        },
         Model {
             id: "claude-opus-4-5-20251101".to_string(),
             object: "model".to_string(),
